@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>深淵塔樓：暗影契約 - 線上房號 PVP 對戰</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #090b10;
+      --bg-panel: rgba(16, 20, 31, 0.94);
+      --border-gold: #c8a256;
+      --gold-light: #f3d285;
+      --crimson: #e63946;
+      --shield-blue: #3a86ff;
+      --poison-green: #2ec4b6;
+      --curse-purple: #9b5de5;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: manipulation;
+      background: radial-gradient(circle at 50% 25%, #192136 0%, #090b10 85%);
+      color: var(--text-main);
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+    }
+
+    #bgCanvas, #aimCanvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    #bgCanvas { z-index: 0; }
+    #aimCanvas { z-index: 60; }
+
+    /* 大廳連線畫面 */
+    #lobbyScreen {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      background: radial-gradient(circle at 50% 30%, rgba(25, 33, 54, 0.96), rgba(9, 11, 16, 0.98));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+
+    .lobby-card {
+      background: var(--bg-panel);
+      border: 1.5px solid var(--border-gold);
+      border-radius: 20px;
+      padding: 26px 22px;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+    }
+
+    .lobby-title {
+      font-size: 1.65rem;
+      font-weight: 900;
+      color: var(--gold-light);
+      margin: 0 0 6px;
+      letter-spacing: 1px;
+    }
+
+    .lobby-sub {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+      margin-bottom: 20px;
+    }
+
+    .lobby-section {
+      background: rgba(30, 41, 59, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+
+    .room-code-display {
+      font-family: monospace;
+      font-size: 2rem;
+      font-weight: 900;
+      letter-spacing: 6px;
+      color: var(--gold-light);
+      background: #090b10;
+      border: 1px dashed var(--border-gold);
+      border-radius: 10px;
+      padding: 10px;
+      margin: 10px 0;
+      cursor: pointer;
+    }
+
+    .code-input {
+      width: 100%;
+      text-align: center;
+      font-family: monospace;
+      font-size: 1.5rem;
+      font-weight: 800;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1.5px solid rgba(200, 162, 86, 0.5);
+      background: #090b10;
+      color: #fff;
+      margin-bottom: 10px;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    .primary-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #c8a256, #9a742b);
+      color: #090b10;
+      font-weight: 800;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: transform 0.12s, filter 0.15s;
+    }
+    .primary-btn:hover { filter: brightness(1.08); }
+    .primary-btn:active { transform: scale(0.97); }
+    .primary-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status-msg {
+      margin-top: 10px;
+      font-size: 0.85rem;
+      color: #38bdf8;
+      min-height: 20px;
+    }
+
+    /* 主遊戲畫面 */
+    #app {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: env(safe-area-inset-top, 8px) 14px env(safe-area-inset-bottom, 10px);
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--bg-panel);
+      border: 1px solid rgba(200, 162, 86, 0.35);
+      border-radius: 12px;
+      padding: 8px 14px;
+      backdrop-filter: blur(8px);
+      gap: 8px;
+    }
+
+    .turn-banner {
+      font-weight: 800;
+      font-size: 0.92rem;
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+    .turn-banner.my-turn {
+      background: rgba(16, 185, 129, 0.22);
+      border: 1px solid #10b981;
+      color: #6ee7b7;
+    }
+    .turn-banner.opp-turn {
+      background: rgba(239, 68, 68, 0.22);
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+    }
+
+    .top-actions { display: flex; gap: 6px; }
+    .icon-btn {
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid rgba(200, 162, 86, 0.4);
+      color: var(--text-main);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 0.82rem;
+      cursor: pointer;
+    }
+
+    /* 戰鬥日誌提示條 */
+    #battleLog {
+      position: fixed;
+      top: 56px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 45;
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid rgba(200, 162, 86, 0.45);
+      border-radius: 999px;
+      padding: 5px 16px;
+      font-size: 0.82rem;
+      color: var(--gold-light);
+      white-space: nowrap;
+      max-width: 92vw;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .arena {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      gap: 16px;
+      padding: 22px 4px 6px;
+      position: relative;
+      min-height: 0;
+    }
+
+    .combatant-card {
+      position: relative;
+      width: 265px;
+      background: var(--bg-panel);
+      border: 1.5px solid rgba(148, 163, 184, 0.25);
+      border-radius: 16px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+      transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+    }
+
+    .combatant-card.active-turn {
+      border-color: var(--gold-light);
+      box-shadow: 0 0 22px rgba(243, 210, 133, 0.28);
+    }
+
+    .combatant-card.target-highlight {
+      border-color: var(--crimson);
+      box-shadow: 0 0 25px rgba(230, 57, 70, 0.65);
+      transform: scale(1.03);
+    }
+
+    .opp-hand-badge {
+      position: absolute;
+      top: -14px;
+      background: #1e293b;
+      border: 1px solid var(--gold-light);
+      color: var(--gold-light);
+      padding: 3px 11px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .avatar-box {
+      font-size: 3.3rem;
+      line-height: 1;
+      margin: 6px 0;
+    }
+
+    .combatant-name {
+      font-weight: 800;
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+
+    .hp-wrapper {
+      width: 100%;
+      background: #1e293b;
+      height: 20px;
+      border-radius: 999px;
+      overflow: hidden;
+      position: relative;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .hp-fill {
+      height: 100%;
+      transition: width 0.3s ease;
+    }
+
+    .hp-text {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-shadow: 0 1px 2px #000;
+    }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 8px;
+      min-height: 24px;
+    }
+
+    .badge {
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+    .badge-block { background: rgba(58, 134, 255, 0.22); border: 1px solid var(--shield-blue); color: #93c5fd; }
+    .badge-str { background: rgba(245, 158, 11, 0.22); border: 1px solid #f59e0b; color: #fcd34d; }
+    .badge-vuln { background: rgba(155, 93, 229, 0.25); border: 1px solid var(--curse-purple); color: #d8b4fe; }
+
+    #castZoneHint {
+      position: absolute;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(200, 162, 86, 0.2);
+      border: 1px dashed var(--gold-light);
+      color: var(--gold-light);
+      padding: 4px 14px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.18s;
+    }
+    #castZoneHint.visible { opacity: 1; }
+
+    .bottom-dock {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .hud-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 6px;
+    }
+
+    .energy-orb {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, #fde047, #d97706 70%, #78350f);
+      border: 2px solid #fef08a;
+      box-shadow: 0 0 18px rgba(245, 158, 11, 0.55);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+    }
+    .energy-orb span:first-child { font-size: 1.15rem; line-height: 1.1; }
+    .energy-orb small { font-size: 0.65rem; }
+
+    .pile-group { display: flex; gap: 8px; }
+    .pile-btn {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      color: var(--text-main);
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+
+    .end-turn-btn {
+      background: linear-gradient(135deg, #b45309, #d97706);
+      border: 1.5px solid #fde68a;
+      color: #fff;
+      font-weight: 800;
+      font-size: 0.95rem;
+      padding: 11px 20px;
+      border-radius: 12px;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(217, 119, 6, 0.45);
+    }
+    .end-turn-btn:disabled { opacity: 0.42; cursor: not-allowed; }
+
+    .hand-area {
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 10px;
+      min-height: 192px;
+      padding: 10px 6px 4px;
+      overflow-x: auto;
+    }
+
+    .card {
+      position: relative;
+      width: 136px;
+      min-width: 136px;
+      height: 184px;
+      background: linear-gradient(165deg, #1e293b 0%, #0f172a 100%);
+      border: 2px solid #475569;
+      border-radius: 13px;
+      padding: 10px 9px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      cursor: pointer;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+      transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.18s;
+      touch-action: none;
+    }
+
+    .card.type-attack { border-color: #ef4444; }
+    .card.type-skill { border-color: #3b82f6; }
+    .card.type-power { border-color: #eab308; }
+
+    .card.playable:hover,
+    .card.selected {
+      transform: translateY(-18px) scale(1.06);
+      z-index: 20;
+      border-color: var(--gold-light);
+      box-shadow: 0 14px 28px rgba(243, 210, 133, 0.35);
+    }
+
+    .card.selected::after {
+      content: "再點一次施放";
+      position: absolute;
+      top: -22px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--gold-light);
+      color: #0f172a;
+      font-size: 0.68rem;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+
+    .card.unplayable {
+      opacity: 0.48;
+      filter: grayscale(0.5);
+    }
+
+    .card-cost {
+      position: absolute;
+      top: -8px;
+      left: -8px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #38bdf8, #1d4ed8);
+      border: 1.5px solid #bae6fd;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.88rem;
+    }
+
+    .card-hotkey {
+      position: absolute;
+      top: 5px;
+      right: 7px;
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      background: rgba(15, 23, 42, 0.8);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    .card-header { text-align: center; margin-top: 4px; }
+    .card-icon { font-size: 2rem; line-height: 1.1; }
+    .card-title { font-weight: 800; font-size: 0.86rem; color: var(--gold-light); margin-top: 2px; }
+    .card-type-tag { font-size: 0.65rem; color: var(--text-muted); }
+    .card-desc {
+      font-size: 0.74rem;
+      line-height: 1.35;
+      color: #e2e8f0;
+      text-align: center;
+      background: rgba(2, 6, 23, 0.55);
+      padding: 6px 5px;
+      border-radius: 8px;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-8px); }
+      50% { transform: translateX(8px); }
+      75% { transform: translateX(-5px); }
+    }
+    .shake { animation: shake 0.32s ease; }
+
+    @keyframes floatUp {
+      0% { opacity: 1; transform: translate(-50%, 0) scale(0.9); }
+      100% { opacity: 0; transform: translate(-50%, -48px) scale(1.15); }
+    }
+    .floating-text {
+      position: fixed;
+      z-index: 85;
+      font-weight: 900;
+      font-size: 1.35rem;
+      pointer-events: none;
+      text-shadow: 0 2px 6px #000;
+      animation: floatUp 0.9s ease-out forwards;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(3, 7, 18, 0.86);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-backdrop.open { display: flex; }
+
+    .modal-box {
+      background: #111827;
+      border: 1.5px solid var(--border-gold);
+      border-radius: 18px;
+      padding: 22px;
+      max-width: 660px;
+      width: 100%;
+      max-height: 86vh;
+      overflow-y: auto;
+      text-align: center;
+    }
+
+    .modal-cards-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    @media (max-width: 680px) {
+      .arena { flex-direction: column; justify-content: center; gap: 14px; }
+      .combatant-card {
+        width: 92%;
+        max-width: 360px;
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 10px 14px;
+        gap: 12px;
+      }
+      .avatar-box { font-size: 2.5rem; margin: 0; }
+      .combatant-info { flex: 1; text-align: left; }
+      .combatant-name { margin-bottom: 4px; font-size: 0.92rem; }
+      .status-row { justify-content: flex-start; margin-top: 5px; }
+      .opp-hand-badge { top: -12px; right: 12px; font-size: 0.72rem; }
+      .hand-area { justify-content: flex-start; min-height: 168px; }
+      .card { width: 118px; min-width: 118px; height: 160px; padding: 8px 7px; }
+      .card-icon { font-size: 1.65rem; }
+      .card-title { font-size: 0.8rem; }
+      .card-desc { font-size: 0.68rem; padding: 4px; }
+      .card-hotkey { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="bgCanvas"></canvas>
+  <canvas id="aimCanvas"></canvas>
+
+  <!-- 線上連線大廳 -->
+  <div id="lobbyScreen">
+    <div class="lobby-card">
+      <h1 class="lobby-title">⚔️ 深淵塔樓 PVP</h1>
+      <p class="lobby-sub">免伺服器 P2P 即時連線對戰（電腦 / 手機跨平台互通）</p>
+
+      <div class="lobby-section">
+        <div style="font-weight:700;color:#e2e8f0;">方法一：建立房間（房主先手）</div>
+        <div class="room-code-display" id="myRoomCode" title="點擊複製房號">生成中...</div>
+        <div style="font-size:0.78rem;color:#94a3b8;">點擊上方房號複製並傳給好友，等待加入即自動開戰</div>
+      </div>
+
+      <div class="lobby-section">
+        <div style="font-weight:700;color:#e2e8f0;margin-bottom:8px;">方法二：輸入房號加入對戰</div>
+        <input type="text" id="joinCodeInput" class="code-input" maxlength="4" placeholder="例如 A7K9" />
+        <button class="primary-btn" id="joinBtn">加入房間並開戰</button>
+      </div>
+
+      <div class="status-msg" id="lobbyStatus">正在連接 P2P 信令伺服器...</div>
+    </div>
+  </div>
+
+  <!-- 對戰主畫面 -->
+  <div id="app">
+    <header class="top-bar">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-weight:800;color:var(--gold-light);">房號: <span id="hudRoomCode">----</span></span>
+        <span class="turn-banner my-turn" id="turnBanner">你的回合</span>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="soundBtn">🔊</button>
+        <button class="icon-btn" id="helpBtn">❓</button>
+      </div>
+    </header>
+
+    <div id="battleLog">⚔️ 契約已締結，對決開始！</div>
+
+    <main class="arena">
+      <div id="castZoneHint">⬆️ 放開滑鼠或手指以施放卡牌</div>
+
+      <!-- 對手資訊卡 -->
+      <section class="combatant-card" id="oppBox" style="order: 2;">
+        <div class="opp-hand-badge" id="oppHandBadge">🃏 手牌 5 張</div>
+        <div class="avatar-box" id="oppAvatar">🦹‍♂️</div>
+        <div class="combatant-info">
+          <div class="combatant-name" id="oppName">對手契約者</div>
+          <div class="hp-wrapper">
+            <div class="hp-fill" id="oppHpBar" style="width: 100%; background: linear-gradient(90deg, #b91c1c, #ef4444);"></div>
+            <div class="hp-text" id="oppHpText">60 / 60</div>
+          </div>
+          <div class="status-row" id="oppStatuses"></div>
+        </div>
+      </section>
+
+      <!-- 自己資訊卡 -->
+      <section class="combatant-card" id="meBox" style="order: 1;">
+        <div class="avatar-box" id="meAvatar">🧙‍♂️</div>
+        <div class="combatant-info">
+          <div class="combatant-name" id="meName">你（暗影法師）</div>
+          <div class="hp-wrapper">
+            <div class="hp-fill" id="meHpBar" style="width: 100%; background: linear-gradient(90deg, #059669, #10b981);"></div>
+            <div class="hp-text" id="meHpText">60 / 60</div>
+          </div>
+          <div class="status-row" id="meStatuses"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="bottom-dock">
+      <div class="hud-controls">
+        <div class="energy-orb">
+          <span id="energyText">3/3</span>
+          <small>魔力</small>
+        </div>
+
+        <div class="pile-group">
+          <button class="pile-btn" id="drawPileBtn">📚 抽牌 <strong id="drawCount">0</strong></button>
+          <button class="pile-btn" id="discardPileBtn">🪦 棄牌 <strong id="discardCount">0</strong></button>
+        </div>
+
+        <button class="end-turn-btn" id="endTurnBtn">結束回合</button>
+      </div>
+
+      <div class="hand-area" id="handArea"></div>
+    </footer>
+  </div>
+
+  <div class="modal-backdrop" id="modalBackdrop">
+    <div class="modal-box" id="modalBox"></div>
+  </div>
+
+  <script>
+    /* ================= 音效引擎 ================= */
+    const SoundFX = (() => {
+      let ctx = null;
+      let muted = false;
+      function ensureCtx() {
+        if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === "suspended") ctx.resume();
+      }
+      function playTone(freq, type, duration, vol = 0.14, slideTo = null) {
+        if (muted) return;
+        try {
+          ensureCtx();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, ctx.currentTime);
+          if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, ctx.currentTime + duration);
+          gain.gain.setValueAtTime(vol, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + duration);
+        } catch (e) {}
+      }
+      return {
+        toggle() { muted = !muted; return muted; },
+        cardSelect() { playTone(520, "sine", 0.08, 0.08); },
+        attack() { playTone(190, "sawtooth", 0.22, 0.18, 55); },
+        shield() { playTone(380, "triangle", 0.25, 0.15, 620); },
+        buff() { playTone(440, "sine", 0.3, 0.14, 880); },
+        hurt() { playTone(120, "square", 0.28, 0.2, 42); },
+        win() {
+          playTone(523, "triangle", 0.18, 0.15);
+          setTimeout(() => playTone(659, "triangle", 0.18, 0.15), 120);
+          setTimeout(() => playTone(784, "triangle", 0.35, 0.18), 240);
+        }
+      };
+    })();
+
+    /* ================= PVP 平衡卡牌庫 (16張均衡構築) ================= */
+    const CARD_DB = {
+      strike: { id: "strike", name: "暗影斬擊", cost: 1, type: "attack", icon: "🗡️", desc: "造成 6 點傷害。" },
+      defend: { id: "defend", name: "幽冥護盾", cost: 1, type: "skill", icon: "🛡️", desc: "獲得 5 點格擋。" },
+      bash: { id: "bash", name: "破甲重擊", cost: 2, type: "attack", icon: "🔨", desc: "造成 8 點傷害，施加 2 層易傷。" },
+      quickSlash: { id: "quickSlash", name: "瞬影連刺", cost: 1, type: "attack", icon: "⚡", desc: "造成 5 點傷害，抽 1 張牌。" },
+      ironWave: { id: "ironWave", name: "鋼鐵浪潮", cost: 1, type: "attack", icon: "🌊", desc: "造成 5 點傷害，獲得 5 點格擋。" },
+      execute: { id: "execute", name: "深淵處決", cost: 2, type: "attack", icon: "💀", desc: "造成 10 點傷害（對手低於40%血量時雙倍）。" },
+      surge: { id: "surge", name: "魔力湧現", cost: 0, type: "skill", icon: "🔮", desc: "獲得 2 點魔力。消耗。", exhaust: true },
+      rage: { id: "rage", name: "狂暴契約", cost: 1, type: "power", icon: "🔥", desc: "獲得 2 點力量。消耗。", exhaust: true },
+      fortress: { id: "fortress", name: "暗影堡壘", cost: 2, type: "skill", icon: "🏰", desc: "獲得 13 點格擋。" },
+      nova: { id: "nova", name: "煉獄新星", cost: 2, type: "attack", icon: "☄️", desc: "造成 13 點傷害，施加 1 層易傷。" },
+      bloodPact: { id: "bloodPact", name: "鮮血獻祭", cost: 0, type: "skill", icon: "🩸", desc: "失去 3 點生命，抽 2 張牌。" },
+      drain: { id: "drain", name: "靈魂虹吸", cost: 2, type: "attack", icon: "🧛", desc: "造成 7 點傷害，恢復 4 點生命。" }
+    };
+
+    const STARTER_PVP_DECK = [
+      "strike", "strike", "strike", "strike",
+      "defend", "defend", "defend", "defend",
+      "bash", "quickSlash", "ironWave", "execute",
+      "surge", "rage", "fortress", "drain"
+    ];
+
+    /* ================= 遊戲與網路狀態 ================= */
+    const state = {
+      isHost: false,
+      roomCode: "",
+      isMyTurn: false,
+      gameOver: false,
+      maxEnergy: 3,
+      energy: 3,
+      me: { hp: 60, maxHp: 60, block: 0, strength: 0, vulnerable: 0 },
+      opp: { hp: 60, maxHp: 60, block: 0, strength: 0, vulnerable: 0, handCount: 5 },
+      drawPile: [],
+      hand: [],
+      discardPile: [],
+      selectedCardIndex: null
+    };
+
+    let peer = null;
+    let conn = null;
+    const PREFIX = "abyss-pvp-2026-";
+
+    function generateRoomCode() {
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      let res = "";
+      for (let i = 0; i < 4; i++) res += chars[Math.floor(Math.random() * chars.length)];
+      return res;
+    }
+
+    function initPeer() {
+      const code = generateRoomCode();
+      state.roomCode = code;
+      peer = new Peer(PREFIX + code);
+
+      peer.on("open", () => {
+        document.getElementById("myRoomCode").textContent = code;
+        document.getElementById("lobbyStatus").textContent = "✅ 已就緒！等待對手輸入房號加入...";
+      });
+
+      peer.on("connection", (incomingConn) => {
+        if (conn) {
+          incomingConn.close();
+          return;
+        }
+        conn = incomingConn;
+        state.isHost = true;
+        setupConnectionHandlers();
+      });
+
+      peer.on("error", (err) => {
+        document.getElementById("lobbyStatus").textContent = `⚠️ 連線錯誤 (${err.type})，請確認房號是否正確`;
+        document.getElementById("joinBtn").disabled = false;
+      });
+    }
+
+    function joinRoom() {
+      const raw = document.getElementById("joinCodeInput").value.trim().toUpperCase();
+      if (raw.length !== 4) {
+        document.getElementById("lobbyStatus").textContent = "請輸入完整的 4 碼房號！";
+        return;
+      }
+      document.getElementById("joinBtn").disabled = true;
+      document.getElementById("lobbyStatus").textContent = `正在連線至房間 ${raw}...`;
+      state.roomCode = raw;
+      state.isHost = false;
+      conn = peer.connect(PREFIX + raw, { reliable: true });
+      setupConnectionHandlers();
+    }
+
+    function setupConnectionHandlers() {
+      conn.on("open", () => {
+        document.getElementById("lobbyScreen").style.display = "none";
+        document.getElementById("hudRoomCode").textContent = state.roomCode;
+        startMatch();
+      });
+
+      conn.on("data", (msg) => {
+        handleRemoteMessage(msg);
+      });
+
+      conn.on("close", () => {
+        setBattleLog("⚠️ 對手已斷開連線");
+        state.gameOver = true;
+        renderAll();
+      });
+    }
+
+    function sendNet(payload) {
+      if (conn && conn.open) {
+        conn.send(payload);
+      }
+    }
+
+    /* ================= 戰鬥與同步邏輯 ================= */
+    function shuffle(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function setBattleLog(text) {
+      document.getElementById("battleLog").textContent = text;
+    }
+
+    function spawnFloatingText(targetEl, text, color = "#fff") {
+      const rect = targetEl.getBoundingClientRect();
+      const el = document.createElement("div");
+      el.className = "floating-text";
+      el.textContent = text;
+      el.style.color = color;
+      el.style.left = `${rect.left + rect.width / 2}px`;
+      el.style.top = `${rect.top + 18}px`;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 920);
+    }
+
+    function triggerShake(el) {
+      el.classList.remove("shake");
+      void el.offsetWidth;
+      el.classList.add("shake");
+    }
+
+    function drawCards(count) {
+      for (let i = 0; i < count; i++) {
+        if (state.drawPile.length === 0) {
+          if (state.discardPile.length === 0) break;
+          state.drawPile = shuffle(state.discardPile);
+          state.discardPile = [];
+        }
+        if (state.hand.length < 9) {
+          state.hand.push(state.drawPile.pop());
+        }
+      }
+    }
+
+    function startMatch() {
+      state.gameOver = false;
+      state.me = { hp: 60, maxHp: 60, block: 0, strength: 0, vulnerable: 0 };
+      state.opp = { hp: 60, maxHp: 60, block: 0, strength: 0, vulnerable: 0, handCount: 5 };
+      state.drawPile = shuffle(STARTER_PVP_DECK);
+      state.hand = [];
+      state.discardPile = [];
+      state.selectedCardIndex = null;
+
+      document.getElementById("meAvatar").textContent = state.isHost ? "🧙‍♂️" : "🦹‍♂️";
+      document.getElementById("oppAvatar").textContent = state.isHost ? "🦹‍♂️" : "🧙‍♂️";
+      document.getElementById("meName").textContent = state.isHost ? "你（房主·先手）" : "你（挑戰者·後手）";
+      document.getElementById("oppName").textContent = state.isHost ? "對手（挑戰者）" : "對手（房主）";
+
+      if (state.isHost) {
+        state.isMyTurn = true;
+        beginMyTurn();
+      } else {
+        state.isMyTurn = false;
+        drawCards(5);
+        setBattleLog("⏳ 等待房主進行先手回合...");
+        syncMyStatus();
+        renderAll();
+      }
+    }
+
+    function beginMyTurn() {
+      state.isMyTurn = true;
+      state.energy = state.maxEnergy;
+      state.me.block = 0;
+      if (state.me.vulnerable > 0) state.me.vulnerable--;
+      drawCards(5);
+      setBattleLog("⚡ 輪到你的回合！請出牌");
+      syncMyStatus();
+      renderAll();
+    }
+
+    function syncMyStatus() {
+      sendNet({
+        type: "SYNC_STATE",
+        hp: state.me.hp,
+        block: state.me.block,
+        strength: state.me.strength,
+        vulnerable: state.me.vulnerable,
+        handCount: state.hand.length
+      });
+    }
+
+    function playCard(handIndex) {
+      if (!state.isMyTurn || state.gameOver) return;
+      const cardId = state.hand[handIndex];
+      if (!cardId) return;
+      const card = CARD_DB[cardId];
+      if (state.energy < card.cost) {
+        spawnFloatingText(document.getElementById("handArea"), "魔力不足！", "#fbbf24");
+        return;
+      }
+
+      state.energy -= card.cost;
+      state.hand.splice(handIndex, 1);
+      state.selectedCardIndex = null;
+      if (!card.exhaust) state.discardPile.push(cardId);
+
+      // 計算卡牌效果
+      let dmgToOpp = 0;
+      let vulnToOpp = 0;
+
+      const calcAttack = (base) => {
+        let d = base + state.me.strength;
+        if (state.opp.vulnerable > 0) d = Math.floor(d * 1.5);
+        return Math.max(0, d);
+      };
+
+      switch (cardId) {
+        case "strike": dmgToOpp = calcAttack(6); break;
+        case "defend": state.me.block += 5; SoundFX.shield(); break;
+        case "bash": dmgToOpp = calcAttack(8); vulnToOpp = 2; break;
+        case "quickSlash": dmgToOpp = calcAttack(5); drawCards(1); break;
+        case "ironWave": dmgToOpp = calcAttack(5); state.me.block += 5; break;
+        case "execute": {
+          const mult = (state.opp.hp / state.opp.maxHp) < 0.4 ? 2 : 1;
+          dmgToOpp = calcAttack(10 * mult);
+          break;
+        }
+        case "surge": state.energy += 2; SoundFX.buff(); break;
+        case "rage": state.me.strength += 2; SoundFX.buff(); break;
+        case "fortress": state.me.block += 13; SoundFX.shield(); break;
+        case "nova": dmgToOpp = calcAttack(13); vulnToOpp = 1; break;
+        case "bloodPact":
+          state.me.hp = Math.max(1, state.me.hp - 3);
+          drawCards(2);
+          SoundFX.hurt();
+          break;
+        case "drain":
+          dmgToOpp = calcAttack(7);
+          state.me.hp = Math.min(state.me.maxHp, state.me.hp + 4);
+          break;
+      }
+
+      // 立即更新本地預覽的對手扣血與護盾
+      if (dmgToOpp > 0) {
+        SoundFX.attack();
+        let actual = dmgToOpp;
+        if (state.opp.block > 0) {
+          const abs = Math.min(state.opp.block, dmgToOpp);
+          state.opp.block -= abs;
+          actual -= abs;
+        }
+        state.opp.hp = Math.max(0, state.opp.hp - actual);
+        triggerShake(document.getElementById("oppBox"));
+        spawnFloatingText(document.getElementById("oppBox"), `-${dmgToOpp}`, "#ef4444");
+      } else if (card.type === "skill" || card.type === "power") {
+        spawnFloatingText(document.getElementById("meBox"), card.name, "#60a5fa");
+      }
+
+      if (vulnToOpp > 0) state.opp.vulnerable += vulnToOpp;
+
+      setBattleLog(`你打出了【${card.name}】`);
+
+      // 傳送出牌動作給對手
+      sendNet({
+        type: "CARD_PLAYED",
+        cardId,
+        dmgToTarget: dmgToOpp,
+        vulnToTarget: vulnToOpp,
+        attackerState: {
+          hp: state.me.hp,
+          block: state.me.block,
+          strength: state.me.strength,
+          vulnerable: state.me.vulnerable,
+          handCount: state.hand.length
+        }
+      });
+
+      renderAll();
+
+      if (state.opp.hp <= 0) {
+        finishMatch(true);
+      }
+    }
+
+    function endMyTurn() {
+      if (!state.isMyTurn || state.gameOver) return;
+      state.isMyTurn = false;
+      state.selectedCardIndex = null;
+      while (state.hand.length > 0) {
+        state.discardPile.push(state.hand.pop());
+      }
+      setBattleLog("⏳ 已結束回合，等待對手行動...");
+      syncMyStatus();
+      renderAll();
+      sendNet({ type: "END_TURN" });
+    }
+
+    function handleRemoteMessage(msg) {
+      if (msg.type === "SYNC_STATE") {
+        state.opp.hp = msg.hp;
+        state.opp.block = msg.block;
+        state.opp.strength = msg.strength;
+        state.opp.vulnerable = msg.vulnerable;
+        state.opp.handCount = msg.handCount;
+        renderAll();
+      } else if (msg.type === "CARD_PLAYED") {
+        const card = CARD_DB[msg.cardId];
+        state.opp.hp = msg.attackerState.hp;
+        state.opp.block = msg.attackerState.block;
+        state.opp.strength = msg.attackerState.strength;
+        state.opp.vulnerable = msg.attackerState.vulnerable;
+        state.opp.handCount = msg.attackerState.handCount;
+
+        setBattleLog(`🔥 對手打出了【${card.name}】！`);
+
+        if (msg.dmgToTarget > 0) {
+          let actual = msg.dmgToTarget;
+          if (state.me.block > 0) {
+            const abs = Math.min(state.me.block, msg.dmgToTarget);
+            state.me.block -= abs;
+            actual -= abs;
+          }
+          state.me.hp = Math.max(0, state.me.hp - actual);
+          SoundFX.hurt();
+          triggerShake(document.getElementById("meBox"));
+          spawnFloatingText(document.getElementById("meBox"), actual > 0 ? `-${actual}` : "格擋！", actual > 0 ? "#ef4444" : "#60a5fa");
+        } else {
+          SoundFX.buff();
+          spawnFloatingText(document.getElementById("oppBox"), card.name, "#fbbf24");
+        }
+
+        if (msg.vulnToTarget > 0) {
+          state.me.vulnerable += msg.vulnToTarget;
+        }
+
+        syncMyStatus();
+        renderAll();
+
+        if (state.me.hp <= 0) {
+          finishMatch(false);
+        }
+      } else if (msg.type === "END_TURN") {
+        if (!state.gameOver) {
+          beginMyTurn();
+        }
+      } else if (msg.type === "REMATCH") {
+        closeModal();
+        startMatch();
+      }
+    }
+
+    function finishMatch(didWin) {
+      state.gameOver = true;
+      if (didWin) SoundFX.win();
+      const modal = document.getElementById("modalBox");
+      modal.innerHTML = `
+        <h2 style="color:${didWin ? "#f3d285" : "#ef4444"};margin-top:0;">
+          ${didWin ? "👑 勝利！你擊敗了對手！" : "💀 戰敗！你的生命已耗盡"}
+        </h2>
+        <p style="color:#cbd5e1;">想再來一場巔峰對決嗎？</p>
+        <button class="primary-btn" id="rematchBtn">🔄 立即再戰一局</button>
+      `;
+      modal.querySelector("#rematchBtn").onclick = () => {
+        sendNet({ type: "REMATCH" });
+        closeModal();
+        startMatch();
+      };
+      openModal();
+    }
+
+    /* ================= 畫面渲染與雙平台觸控拖曳 ================= */
+    function createCardElement(card, handIndex, isPreview = false) {
+      const el = document.createElement("div");
+      const canPlay = !isPreview && state.isMyTurn && !state.gameOver && state.energy >= card.cost;
+      el.className = `card type-${card.type} ${isPreview ? "" : (canPlay ? "playable" : "unplayable")} ${state.selectedCardIndex === handIndex ? "selected" : ""}`;
+      const typeLabel = card.type === "attack" ? "攻擊" : (card.type === "skill" ? "技能" : "能力");
+
+      el.innerHTML = `
+        <div class="card-cost">${card.cost}</div>
+        ${!isPreview ? `<div class="card-hotkey">${handIndex + 1}</div>` : ""}
+        <div class="card-header">
+          <div class="card-icon">${card.icon}</div>
+          <div class="card-title">${card.name}</div>
+          <div class="card-type-tag">${typeLabel}</div>
+        </div>
+        <div class="card-desc">${card.desc}</div>
+      `;
+
+      if (!isPreview) attachPointerDragAndTap(el, handIndex, card);
+      return el;
+    }
+
+    function renderAll() {
+      const banner = document.getElementById("turnBanner");
+      banner.textContent = state.isMyTurn ? "⚡ 你的回合" : "⏳ 對手回合";
+      banner.className = "turn-banner " + (state.isMyTurn ? "my-turn" : "opp-turn");
+
+      document.getElementById("meBox").classList.toggle("active-turn", state.isMyTurn);
+      document.getElementById("oppBox").classList.toggle("active-turn", !state.isMyTurn);
+
+      // 對手狀態
+      document.getElementById("oppHandBadge").textContent = `🃏 手牌 ${state.opp.handCount} 張`;
+      document.getElementById("oppHpBar").style.width = `${(state.opp.hp / state.opp.maxHp) * 100}%`;
+      document.getElementById("oppHpText").textContent = `${state.opp.hp} / ${state.opp.maxHp}`;
+      const oppStat = document.getElementById("oppStatuses");
+      oppStat.innerHTML = "";
+      if (state.opp.block > 0) oppStat.innerHTML += `<span class="badge badge-block">🛡️ ${state.opp.block}</span>`;
+      if (state.opp.strength > 0) oppStat.innerHTML += `<span class="badge badge-str">💪 +${state.opp.strength}</span>`;
+      if (state.opp.vulnerable > 0) oppStat.innerHTML += `<span class="badge badge-vuln">💔 易傷 ${state.opp.vulnerable}</span>`;
+
+      // 自己狀態
+      document.getElementById("meHpBar").style.width = `${(state.me.hp / state.me.maxHp) * 100}%`;
+      document.getElementById("meHpText").textContent = `${state.me.hp} / ${state.me.maxHp}`;
+      const meStat = document.getElementById("meStatuses");
+      meStat.innerHTML = "";
+      if (state.me.block > 0) meStat.innerHTML += `<span class="badge badge-block">🛡️ ${state.me.block}</span>`;
+      if (state.me.strength > 0) meStat.innerHTML += `<span class="badge badge-str">💪 +${state.me.strength}</span>`;
+      if (state.me.vulnerable > 0) meStat.innerHTML += `<span class="badge badge-vuln">💔 易傷 ${state.me.vulnerable}</span>`;
+
+      document.getElementById("energyText").textContent = `${state.energy}/${state.maxEnergy}`;
+      document.getElementById("drawCount").textContent = state.drawPile.length;
+      document.getElementById("discardCount").textContent = state.discardPile.length;
+      document.getElementById("endTurnBtn").disabled = !state.isMyTurn || state.gameOver;
+
+      const handArea = document.getElementById("handArea");
+      handArea.innerHTML = "";
+      state.hand.forEach((cid, idx) => {
+        handArea.appendChild(createCardElement(CARD_DB[cid], idx));
+      });
+    }
+
+    const aimCanvas = document.getElementById("aimCanvas");
+    const aimCtx = aimCanvas.getContext("2d");
+    let dragState = null;
+
+    function drawAimCurve(sx, sy, cx, cy, ready) {
+      aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
+      aimCtx.save();
+      aimCtx.beginPath();
+      aimCtx.moveTo(sx, sy);
+      aimCtx.quadraticCurveTo((sx + cx) / 2, Math.min(sy, cy) - 90, cx, cy);
+      aimCtx.strokeStyle = ready ? "#ef4444" : "#f3d285";
+      aimCtx.lineWidth = ready ? 5 : 3;
+      aimCtx.setLineDash([10, 6]);
+      aimCtx.stroke();
+      aimCtx.restore();
+    }
+
+    function clearAimCurve() {
+      aimCtx.clearRect(0, 0, aimCanvas.width, aimCanvas.height);
+      document.getElementById("castZoneHint").classList.remove("visible");
+      document.getElementById("oppBox").classList.remove("target-highlight");
+    }
+
+    function attachPointerDragAndTap(cardEl, handIndex, card) {
+      cardEl.addEventListener("pointerdown", (e) => {
+        if (!state.isMyTurn || state.gameOver) return;
+        const rect = cardEl.getBoundingClientRect();
+        dragState = {
+          handIndex,
+          card,
+          startX: e.clientX,
+          startY: e.clientY,
+          originX: rect.left + rect.width / 2,
+          originY: rect.top + 20,
+          moved: false
+        };
+        cardEl.setPointerCapture(e.pointerId);
+      });
+
+      cardEl.addEventListener("pointermove", (e) => {
+        if (!dragState || dragState.handIndex !== handIndex) return;
+        if (dragState.startY - e.clientY > 14 || Math.abs(e.clientX - dragState.startX) > 14) {
+          dragState.moved = true;
+        }
+        if (dragState.moved && state.energy >= card.cost) {
+          const isReady = e.clientY < window.innerHeight * 0.62;
+          document.getElementById("castZoneHint").classList.add("visible");
+          if (card.type === "attack") {
+            document.getElementById("oppBox").classList.toggle("target-highlight", isReady);
+          }
+          drawAimCurve(dragState.originX, dragState.originY, e.clientX, e.clientY, isReady);
+        }
+      });
+
+      cardEl.addEventListener("pointerup", (e) => {
+        if (!dragState || dragState.handIndex !== handIndex) return;
+        const wasMoved = dragState.moved;
+        const releaseY = e.clientY;
+        dragState = null;
+        clearAimCurve();
+
+        if (wasMoved) {
+          if (releaseY < window.innerHeight * 0.62 && state.energy >= card.cost) playCard(handIndex);
+          return;
+        }
+
+        if (e.pointerType !== "touch") {
+          playCard(handIndex);
+        } else {
+          if (state.selectedCardIndex === handIndex) {
+            playCard(handIndex);
+          } else {
+            SoundFX.cardSelect();
+            state.selectedCardIndex = handIndex;
+            renderAll();
+          }
+        }
+      });
+    }
+
+    /* ================= 快捷鍵、彈窗與按鈕綁定 ================= */
+    function openModal() { document.getElementById("modalBackdrop").classList.add("open"); }
+    function closeModal() { document.getElementById("modalBackdrop").classList.remove("open"); }
+
+    function showPileModal(title, cardIds) {
+      const modal = document.getElementById("modalBox");
+      modal.innerHTML = `
+        <h3 style="color:var(--gold-light);margin-top:0;">${title} (${cardIds.length} 張)</h3>
+        <div class="modal-cards-grid" id="pileGrid"></div>
+        <button class="primary-btn" onclick="closeModal()">關閉</button>
+      `;
+      const grid = modal.querySelector("#pileGrid");
+      if (cardIds.length === 0) grid.innerHTML = `<p style="color:#94a3b8;">目前沒有卡牌</p>`;
+      else cardIds.forEach((cid) => grid.appendChild(createCardElement(CARD_DB[cid], -1, true)));
+      openModal();
+    }
+
+    document.getElementById("myRoomCode").onclick = () => {
+      navigator.clipboard?.writeText(state.roomCode);
+      document.getElementById("lobbyStatus").textContent = `📋 已複製房號 ${state.roomCode}！快傳給好友加入`;
+    };
+    document.getElementById("joinBtn").onclick = joinRoom;
+    document.getElementById("endTurnBtn").onclick = endMyTurn;
+    document.getElementById("drawPileBtn").onclick = () => showPileModal("抽牌堆", state.drawPile);
+    document.getElementById("discardPileBtn").onclick = () => showPileModal("棄牌堆", state.discardPile);
+    document.getElementById("soundBtn").onclick = () => {
+      const muted = SoundFX.toggle();
+      document.getElementById("soundBtn").textContent = muted ? "🔇" : "🔊";
+    };
+    document.getElementById("helpBtn").onclick = () => {
+      const modal = document.getElementById("modalBox");
+      modal.innerHTML = `
+        <h3 style="color:var(--gold-light);margin-top:0;">📖 PVP 對戰說明</h3>
+        <p style="text-align:left;font-size:0.88rem;line-height:1.6;color:#cbd5e1;">
+          • 雙方各擁有 <strong>60 點生命</strong>與相同的 16 張平衡牌組。<br>
+          • <strong>電腦操作</strong>：點擊或拖曳出牌，<code>1~9</code> 出牌，<code>Space</code> 結束回合。<br>
+          • <strong>手機操作</strong>：點一下選取放大、再點一次施放，或按住卡牌往上滑動直接施放。
+        </p>
+        <button class="primary-btn" onclick="closeModal()">關閉</button>
+      `;
+      openModal();
+    };
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key >= "1" && e.key <= "9") {
+        const idx = parseInt(e.key, 10) - 1;
+        if (idx < state.hand.length) playCard(idx);
+      } else if (e.code === "Space") {
+        e.preventDefault();
+        endMyTurn();
+      }
+    });
+
+    /* ================= 背景粒子 ================= */
+    const bgCanvas = document.getElementById("bgCanvas");
+    const bgCtx = bgCanvas.getContext("2d");
+    function resize() {
+      aimCanvas.width = bgCanvas.width = window.innerWidth;
+      aimCanvas.height = bgCanvas.height = window.innerHeight;
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    const particles = Array.from({ length: 30 }, () => ({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      r: Math.random() * 2 + 0.8,
+      vy: -(Math.random() * 0.35 + 0.15)
+    }));
+
+    function loopBg() {
+      bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+      particles.forEach((p) => {
+        p.y += p.vy;
+        if (p.y < -10) { p.y = bgCanvas.height + 10; p.x = Math.random() * bgCanvas.width; }
+        bgCtx.beginPath();
+        bgCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        bgCtx.fillStyle = "rgba(243, 210, 133, 0.32)";
+        bgCtx.fill();
+      });
+      requestAnimationFrame(loopBg);
+    }
+    loopBg();
+    initPeer();
+  </script>
+</body>
+</html>
